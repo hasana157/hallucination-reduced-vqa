@@ -1,0 +1,41 @@
+# ============================================================
+# hallucination-reduced-vqa — config/default.yaml
+# Master configuration — includes all sub-configs
+# Override specific keys per environment.
+# ============================================================
+
+project:
+  name: "hallucination-reduced-vqa"
+  version: "1.0.0"
+  seed: 42
+  description: "QLoRA + RAG + VCD for VLM hallucination reduction"
+
+# ------ Environment Resolution ------
+# DATA_ROOT env var overrides data.root
+# Set in Colab: os.environ["DATA_ROOT"] = "/content/gdrive/..."
+
+# ------ Sub-config includes (resolved by Config.load) ------
+# These are the canonical defaults; override in specific yamls
+data:
+  root: "${DATA_ROOT:./data}"            # Default: ./data (local), override for Colab
+  cache_dir: "${CACHE_DIR:./data/.cache}"
+
+clip:
+  model_name: "${CLIP_MODEL_NAME:openai/clip-vit-base-patch32}"
+  batch_size: 32
+  device: "auto"                          # auto = cuda if available else cpu
+
+model:
+  name: "Qwen/Qwen2-VL-2B-Instruct"
+  quantization_bits: 4
+
+training:
+  output_dir: "checkpoints/lora_weights"
+  logging_dir: "logs/training"
+  log_level: "info"
+  seed: 42
+
+logging:
+  level: "INFO"
+  format: "%(asctime)s - %(name)s - %(levelname)s - %(message)s"
+  log_dir: "logs"

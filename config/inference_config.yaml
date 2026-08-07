@@ -1,0 +1,32 @@
+# ============================================================
+# hallucination-reduced-vqa — config/inference_config.yaml
+# Module 3: Inference settings (placeholder for Module 3)
+# ============================================================
+
+inference:
+  # Model
+  base_model: "Qwen/Qwen2-VL-2B-Instruct"
+  lora_weights_path: "checkpoints/lora_weights/adapter_model"
+  quantization_bits: 4
+
+  # Generation
+  max_new_tokens: 64
+  temperature: 0.1
+  do_sample: false                         # Greedy by default
+
+  # RAG
+  rag:
+    enabled: true
+    top_k: 3
+    uncertainty_threshold: 0.5           # Trigger RAG if confidence < threshold
+    faiss_index_path: "${DATA_ROOT:./data}/faiss_index/index.faiss"
+
+  # VCD
+  vcd:
+    enabled: true
+    noise_step: 999                      # Diffusion noise step for distorted image
+    alpha_cd: 1.0                        # Contrastive decoding weight
+
+  # Output
+  output_dir: "checkpoints/model_outputs"
+  batch_size: 8

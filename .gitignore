@@ -1,0 +1,95 @@
+# ============================================================
+# hallucination-reduced-vqa — .gitignore
+# ============================================================
+
+# ------ Python ------
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+*.egg-info/
+dist/
+build/
+*.egg
+
+# ------ Virtual Environments ------
+venv/
+.venv/
+env/
+.env
+.env.local
+ENV/
+
+# ------ IDE / Editor ------
+.vscode/
+.idea/
+*.swp
+*.swo
+*.sublime-project
+*.sublime-workspace
+
+# ------ OS ------
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# ------ Jupyter Notebooks ------
+.ipynb_checkpoints/
+*/.ipynb_checkpoints/
+
+# ------ Data (CRITICAL - never commit raw datasets) ------
+data/vqav2/
+data/pope/
+data/faiss_index/
+data/*.pkl
+data/*.cache
+
+# ------ Large Binary Files ------
+*.pkl
+*.npy
+*.faiss
+*.pt
+*.bin
+*.h5
+*.hdf5
+*.onnx
+
+# ------ Checkpoints & Model Weights ------
+checkpoints/lora_weights/checkpoint-*/
+checkpoints/model_outputs/
+# Keep the .gitkeep placeholder files
+!checkpoints/lora_weights/.gitkeep
+!checkpoints/model_outputs/.gitkeep
+
+# ------ SRS / Confidential Documents (NEVER PUSH) ------
+srs/
+*.pdf
+
+# ------ Logs ------
+logs/
+*.log
+!logs/.gitkeep
+
+# ------ Results (large output files) ------
+results/detailed_results.json
+results/metrics_summary.json
+!results/.gitkeep
+
+# ------ Testing ------
+.pytest_cache/
+.coverage
+htmlcov/
+coverage.xml
+*.cover
+
+# ------ Type Checking ------
+.mypy_cache/
+.dmypy.json
+dmypy.json
+
+# ------ Build / Distribution ------
+*.spec
+
+# ------ HuggingFace Cache ------
+~/.cache/huggingface/

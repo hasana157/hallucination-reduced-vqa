@@ -1,0 +1,71 @@
+# ============================================================
+# hallucination-reduced-vqa — config/data_config.yaml
+# Module 1: Data preparation configuration
+# All paths support ${VAR:default} syntax (resolved by Config class)
+# ============================================================
+
+data:
+  root: "${DATA_ROOT:./data}"
+
+  # ------ VQAv2 ------
+  vqav2:
+    enabled: true
+    # HuggingFace dataset name (downloaded automatically)
+    hf_dataset_name: "HuggingFaceM4/VQAv2"
+    # Local paths after download
+    train_path: "${DATA_ROOT:./data}/vqav2/train"
+    val_path: "${DATA_ROOT:./data}/vqav2/val"
+    annotations_file: "${DATA_ROOT:./data}/vqav2/annotations.json"
+    images_dir: "${DATA_ROOT:./data}/vqav2/images"
+    cache: true
+    cache_file: "${DATA_ROOT:./data}/.cache/vqav2_{split}_cache.pkl"
+    # Expected counts (for validation)
+    expected_train_images: 82783
+    expected_val_images: 40504
+
+  # ------ POPE ------
+  pope:
+    enabled: true
+    path: "${DATA_ROOT:./data}/pope"
+    modes:
+      - "random"
+      - "popular"
+      - "adversarial"
+    # POPE GitHub raw URLs
+    github_base_url: "https://raw.githubusercontent.com/AoiDragon/POPE/master/output/coco"
+    # Each mode JSON filename pattern
+    filename_pattern: "coco_{mode}_pope_reason.json"
+    cache: true
+    expected_images_per_mode: 1000
+
+  # ------ Training Captions (RAG corpus) ------
+  captions:
+    path: "${DATA_ROOT:./data}/captions/training_captions.json"
+    metadata_path: "${DATA_ROOT:./data}/captions/caption_metadata.json"
+    count: 1000                # Exactly 1000 captions required
+
+  # ------ FAISS Index ------
+  faiss:
+    index_path: "${DATA_ROOT:./data}/faiss_index/index.faiss"
+    embeddings_path: "${DATA_ROOT:./data}/faiss_index/caption_embeddings.npy"
+    mapping_path: "${DATA_ROOT:./data}/faiss_index/caption_mapping.json"
+    index_type: "FlatL2"       # FAISS.IndexFlatL2 (exact, fast for 1000 items)
+    top_k: 3
+
+# ------ CLIP Embedding Extractor ------
+clip:
+  model_name: "${CLIP_MODEL_NAME:openai/clip-vit-base-patch32}"
+  batch_size: 32               # Batch size for embedding extraction (adjust for OOM)
+  device: "auto"               # auto | cuda:0 | cpu
+  embedding_dim: 512
+
+# ------ Validation Settings ------
+validation:
+  check_image_integrity: true
+  check_annotation_format: true
+  check_duplicate_ids: true
+  check_faiss_index: true
+  check_embeddings: true
+  # Allow up to N missing images before failing (graceful tolerance)
+  max_missing_images: 100
+  report_path: "${DATA_ROOT:./data}/validation_report.json"

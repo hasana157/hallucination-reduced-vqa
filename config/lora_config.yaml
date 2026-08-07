@@ -1,0 +1,60 @@
+# ============================================================
+# hallucination-reduced-vqa — config/lora_config.yaml
+# Standalone LoRA configuration for ablation studies.
+# Import this independently to test different LoRA ranks.
+# ============================================================
+
+# ------ Ablation Variants ------
+# Modify these values and re-run training to study effect of rank on accuracy
+
+# Default (SRS baseline)
+default:
+  r: 16
+  alpha: 32
+  dropout: 0.05
+  target_modules:
+    - "q_proj"
+    - "v_proj"
+    - "up_proj"
+    - "down_proj"
+    - "gate_proj"
+  bias: "none"
+  task_type: "CAUSAL_LM"
+
+# Low-rank (faster, less expressive)
+low_rank:
+  r: 4
+  alpha: 8
+  dropout: 0.05
+  target_modules:
+    - "q_proj"
+    - "v_proj"
+  bias: "none"
+  task_type: "CAUSAL_LM"
+
+# High-rank (slower, more expressive)
+high_rank:
+  r: 64
+  alpha: 128
+  dropout: 0.05
+  target_modules:
+    - "q_proj"
+    - "k_proj"
+    - "v_proj"
+    - "o_proj"
+    - "up_proj"
+    - "down_proj"
+    - "gate_proj"
+  bias: "none"
+  task_type: "CAUSAL_LM"
+
+# Attention-only (targets only attention projections)
+attention_only:
+  r: 16
+  alpha: 32
+  dropout: 0.05
+  target_modules:
+    - "q_proj"
+    - "v_proj"
+  bias: "none"
+  task_type: "CAUSAL_LM"

@@ -1,0 +1,78 @@
+# ============================================================
+# hallucination-reduced-vqa — config/training_config.yaml
+# Module 2: QLoRA fine-tuning hyperparameters
+# ============================================================
+
+# ------ Base Model ------
+model:
+  name: "Qwen/Qwen2-VL-2B-Instruct"
+  quantization_bits: 4                    # BitsAndBytes 4-bit NF4
+  bnb_4bit_compute_dtype: "float16"       # Compute in fp16 for efficiency
+  bnb_4bit_quant_type: "nf4"             # NormalFloat4 quantization
+  bnb_4bit_use_double_quant: true         # Double quantization for memory savings
+  trust_remote_code: true
+
+# ------ LoRA Configuration ------
+lora:
+  r: 16                                   # Rank (expressiveness)
+  alpha: 32                               # Scaling factor (alpha / r = 2.0)
+  target_modules:
+    - "q_proj"
+    - "v_proj"
+    - "up_proj"
+    - "down_proj"
+    - "gate_proj"
+  dropout: 0.05
+  bias: "none"
+  task_type: "CAUSAL_LM"
+  # Number of trainable params ≈ 0.5% of total (logged during setup)
+
+# ------ Training Hyperparameters ------
+training:
+  # Optimizer
+  learning_rate: 1.0e-4                  # Conservative LR (no catastrophic forgetting)
+  weight_decay: 0.01
+  optimizer: "adamw"                      # AdamW
+  # Schedule
+  warmup_steps: 500                       # Linear warmup
+  lr_scheduler_type: "linear"            # Linear decay after warmup
+  # Batch & Accumulation
+  per_device_train_batch_size: 4         # Max for Colab T4 (~14.5GB)
+  per_device_eval_batch_size: 4
+  gradient_accumulation_steps: 2         # Effective batch = 4 × 2 = 8
+  # Epochs & Steps
+  num_train_epochs: 2
+  max_grad_norm: 1.0                      # Gradient clipping
+  # Precision
+  fp16: true                             # Mixed precision (T4 supports fp16)
+  bf16: false                            # BF16 not available on T4
+  # Checkpointing
+  save_strategy: "steps"
+  save_steps: 500
+  save_total_limit: 3                    # Keep only last 3 checkpoints
+  # Evaluation
+  evaluation_strategy: "steps"
+  eval_steps: 1000
+  load_best_model_at_end: false          # Save VRAM; load manually if needed
+  # Reproducibility
+  seed: 42
+  data_seed: 42
+  # Logging
+  logging_steps: 50
+  report_to: "none"                      # No external trackers (wandb etc.)
+
+# ------ Data ------
+data:
+  data_root: "${DATA_ROOT:./data}"
+  train_split: "train"
+  eval_split: "val"
+  max_seq_length: 512                    # Max token length for questions + answers
+  num_workers: 2                         # DataLoader workers
+
+# ------ Output ------
+output:
+  output_dir: "checkpoints/lora_weights"
+  logging_dir: "logs/training"
+  log_level: "info"
+  # Final adapter path (after training completes)
+  final_adapter_path: "checkpoints/lora_weights/adapter_model"
