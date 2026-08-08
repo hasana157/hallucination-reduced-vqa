@@ -39,6 +39,7 @@ class TrainingConfig:
     seed: int = 42
     output_dir: str = "checkpoints/lora_weights"
     logging_dir: str = "logs/training"
+    use_unsloth: bool = False  # Set True to use Unsloth 2x speedup (requires: pip install unsloth)
 
 
 class VQADataset(Dataset):
@@ -75,11 +76,17 @@ class VQACollator:
         self.processor = processor
 
     def __call__(self, batch: List[Dict[str, Any]]) -> Dict[str, torch.Tensor]:
-        """Collate batch items into tensors."""
+        """Collate batch items into tensors.
+
+        Label masking strategy: prompt tokens are masked with -100 so the
+        cross-entropy loss is computed only over the answer tokens. This
+        prevents the model from wasting capacity re-generating its own prompt.
+        """
         from PIL import Image
 
         images = []
         texts = []
+        answer_texts = []
 
         for item in batch:
             img_p = Path(item["image_path"])
@@ -93,17 +100,46 @@ class VQACollator:
 
             images.append(img)
 
-            # Format Qwen2-VL conversational prompt
+            # Format Qwen2-VL conversational prompt (full sequence)
             answer_text = item["answers"][0] if item["answers"] else ""
-            prompt = (
+            answer_texts.append(answer_text)
+            full_prompt = (
                 f"<|im_start|>system\nYou are a helpful assistant.<|im_end|>\n"
                 f"<|im_start|>user\n<|vision_start|><|image_pad|><|vision_end|>{item['question']}<|im_end|>\n"
                 f"<|im_start|>assistant\n{answer_text}<|im_end|>"
             )
-            texts.append(prompt)
+            texts.append(full_prompt)
 
         inputs = self.processor(text=texts, images=images, return_tensors="pt", padding=True)
-        inputs["labels"] = inputs["input_ids"].clone()
+
+        # --- Label masking: mask all prompt tokens, keep only answer tokens ---
+        labels = inputs["input_ids"].clone()
+        for i, answer_text in enumerate(answer_texts):
+            # Build the prompt-only prefix (without the answer) to find its token length
+            prefix = (
+                f"<|im_start|>system\nYou are a helpful assistant.<|im_end|>\n"
+                f"<|im_start|>user\n<|vision_start|><|image_pad|><|vision_end|>{batch[i]['question']}<|im_end|>\n"
+                f"<|im_start|>assistant\n"
+            )
+            try:
+                # Tokenize the prefix to find where the answer starts
+                prefix_ids = self.processor.tokenizer(
+                    prefix,
+                    return_tensors="pt",
+                    add_special_tokens=False,
+                ).input_ids
+                prompt_len = prefix_ids.shape[-1]
+            except Exception:
+                # Fallback: mask first 80% of tokens as prompt
+                prompt_len = int(labels[i].shape[-1] * 0.8)
+
+            # Mask padding tokens and prompt tokens
+            labels[i, :prompt_len] = -100
+            # Also mask padding
+            pad_token_id = getattr(self.processor.tokenizer, "pad_token_id", 0) or 0
+            labels[i, labels[i] == pad_token_id] = -100
+
+        inputs["labels"] = labels
         return inputs
 
 

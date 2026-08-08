@@ -1,6 +1,8 @@
 """QLoRATrainer class orchestrating QLoRA fine-tuning loop for Qwen2-VL-2B.
 
-Supports HuggingFace `Trainer` and optional Unsloth 2x speedup backend.
+Supports HuggingFace ``Trainer`` backend (default) and optional Unsloth 2x
+speedup backend. Set ``use_unsloth=True`` in TrainingConfig and install
+``unsloth`` to enable the fast path.
 
 Example:
     >>> from src.training.trainer import QLoRATrainer
@@ -10,19 +12,35 @@ Example:
 
 import logging
 from pathlib import Path
-from typing import Any, Dict, Optional
+from typing import Any, Optional
 
 from transformers import Trainer, TrainingArguments
 
 from src.training.callbacks import CheckpointCallback, MemoryCallback
-from src.training.utils import TrainingConfig, VQACollator, compute_vqa_accuracy
+from src.training.utils import TrainingConfig, VQACollator
 from src.utils.helpers import set_seed
 
 logger = logging.getLogger(__name__)
 
+# Detect Unsloth availability once at import time
+try:
+    import unsloth  # noqa: F401
+    _UNSLOTH_AVAILABLE = True
+    logger.info("Unsloth detected — fast training path available.")
+except ImportError:
+    _UNSLOTH_AVAILABLE = False
+    logger.info("Unsloth not installed — using standard HuggingFace Trainer.")
+
 
 class QLoRATrainer:
     """Trainer orchestrator for QLoRA fine-tuning on VQAv2.
+
+    Supports two backends:
+      - **Standard** (default): HuggingFace ``Trainer`` with fp16 and gradient
+        accumulation. Works everywhere.
+      - **Unsloth** (optional): ``FastVisionModel`` + ``SFTTrainer`` for ~2x
+        training speed and ~40% lower memory. Requires ``pip install unsloth``.
+        Enabled via ``config.use_unsloth = True``.
 
     Args:
         model: PEFT LoRA wrapped model instance.
@@ -54,11 +72,59 @@ class QLoRATrainer:
         self.collator = VQACollator(processor=self.processor)
         self._hf_trainer = None
 
-    def setup(self):
-        """Prepare HuggingFace TrainingArguments and Trainer."""
-        logger.info("Setting up TrainingArguments for QLoRA fine-tuning...")
+        # Determine which backend to use
+        self._use_unsloth = getattr(self.config, "use_unsloth", False) and _UNSLOTH_AVAILABLE
+        if getattr(self.config, "use_unsloth", False) and not _UNSLOTH_AVAILABLE:
+            logger.warning(
+                "config.use_unsloth=True but unsloth is not installed. "
+                "Falling back to standard HuggingFace Trainer. "
+                "Install with: pip install unsloth"
+            )
+        backend = "Unsloth" if self._use_unsloth else "HuggingFace Trainer"
+        logger.info(f"QLoRATrainer initialized with backend: {backend}")
 
-        training_args = TrainingArguments(
+    # ------------------------------------------------------------------
+    # Public API
+    # ------------------------------------------------------------------
+
+    def setup(self):
+        """Prepare TrainingArguments and Trainer (standard or Unsloth)."""
+        if self._use_unsloth:
+            self._setup_unsloth()
+        else:
+            self._setup_standard()
+
+    def train(self, resume_from_checkpoint: Optional[str] = None):
+        """Execute QLoRA fine-tuning loop.
+
+        Args:
+            resume_from_checkpoint: Optional checkpoint directory path to resume from.
+        """
+        if self._hf_trainer is None:
+            self.setup()
+
+        backend = "Unsloth" if self._use_unsloth else "HuggingFace Trainer"
+        logger.info(
+            f"Starting QLoRA fine-tuning via {backend} "
+            f"(Epochs={self.config.num_epochs}, LR={self.config.learning_rate})..."
+        )
+
+        train_result = self._hf_trainer.train(resume_from_checkpoint=resume_from_checkpoint)
+
+        # Save final LoRA adapter
+        final_adapter_dir = self.output_dir / "adapter_model"
+        self.model.save_pretrained(str(final_adapter_dir))
+        logger.info(f"Saved final LoRA adapter to {final_adapter_dir}")
+
+        return train_result
+
+    # ------------------------------------------------------------------
+    # Private setup helpers
+    # ------------------------------------------------------------------
+
+    def _build_training_args(self) -> TrainingArguments:
+        """Build shared TrainingArguments used by both backends."""
+        return TrainingArguments(
             output_dir=str(self.output_dir),
             learning_rate=self.config.learning_rate,
             num_train_epochs=self.config.num_epochs,
@@ -80,6 +146,10 @@ class QLoRATrainer:
             remove_unused_columns=False,
         )
 
+    def _setup_standard(self):
+        """Standard HuggingFace Trainer setup."""
+        logger.info("Setting up standard HuggingFace TrainingArguments...")
+        training_args = self._build_training_args()
         self._hf_trainer = Trainer(
             model=self.model,
             args=training_args,
@@ -88,25 +158,58 @@ class QLoRATrainer:
             data_collator=self.collator,
             callbacks=[CheckpointCallback(), MemoryCallback()],
         )
+        logger.info("Standard QLoRATrainer setup complete.")
 
-        logger.info("QLoRATrainer setup complete.")
+    def _setup_unsloth(self):
+        """Unsloth fast trainer setup (2x speed, ~40% less memory).
 
-    def train(self, resume_from_checkpoint: Optional[str] = None):
-        """Execute QLoRA fine-tuning loop.
-
-        Args:
-            resume_from_checkpoint: Optional checkpoint directory path to resume from.
+        Falls back to standard Trainer on any import or setup error.
         """
-        if self._hf_trainer is None:
-            self.setup()
+        logger.info("Setting up Unsloth fast training path...")
+        try:
+            from unsloth import FastVisionModel, is_bf16_supported
+            from trl import SFTConfig, SFTTrainer
 
-        logger.info(f"Starting QLoRA fine-tuning (Epochs={self.config.num_epochs}, LR={self.config.learning_rate})...")
-        
-        train_result = self._hf_trainer.train(resume_from_checkpoint=resume_from_checkpoint)
+            # Put model in training mode with Unsloth optimizations
+            FastVisionModel.for_training(self.model)
 
-        # Save final LoRA adapter
-        final_adapter_dir = self.output_dir / "adapter_model"
-        self.model.save_pretrained(str(final_adapter_dir))
-        logger.info(f"Saved final LoRA adapter to {final_adapter_dir}")
+            training_args = SFTConfig(
+                output_dir=str(self.output_dir),
+                learning_rate=self.config.learning_rate,
+                num_train_epochs=self.config.num_epochs,
+                per_device_train_batch_size=self.config.batch_size,
+                gradient_accumulation_steps=self.config.gradient_accumulation_steps,
+                warmup_steps=self.config.warmup_steps,
+                max_grad_norm=1.0,
+                weight_decay=0.01,
+                save_strategy="steps",
+                save_steps=self.config.save_steps,
+                save_total_limit=self.config.save_total_limit,
+                fp16=not is_bf16_supported(),
+                bf16=is_bf16_supported(),
+                logging_steps=50,
+                seed=self.config.seed,
+                report_to="none",
+                remove_unused_columns=False,
+                # SFTTrainer-specific: skip default dataset prep since we use a custom collator
+                dataset_text_field="",
+                dataset_kwargs={"skip_prepare_dataset": True},
+            )
 
-        return train_result
+            self._hf_trainer = SFTTrainer(
+                model=self.model,
+                tokenizer=self.processor.tokenizer,
+                args=training_args,
+                train_dataset=self.train_dataset,
+                eval_dataset=self.val_dataset,
+                data_collator=self.collator,
+                callbacks=[CheckpointCallback(), MemoryCallback()],
+            )
+            logger.info("Unsloth SFTTrainer setup complete.")
+
+        except Exception as e:
+            logger.warning(
+                f"Unsloth setup failed ({e}). Falling back to standard HuggingFace Trainer."
+            )
+            self._use_unsloth = False
+            self._setup_standard()

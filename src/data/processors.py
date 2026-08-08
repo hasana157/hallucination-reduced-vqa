@@ -178,11 +178,7 @@ class DataValidator:
         self.config = config
 
     def validate(self) -> Dict[str, Any]:
-        """Run all data checks and return validation report.
-
-        Returns:
-            ValidationReport dict with pass/fail status for each check.
-        """
+        """Run all data checks and return validation report."""
         report = {
             "vqav2_images_valid": True,
             "vqav2_annotations_valid": True,
@@ -193,5 +189,32 @@ class DataValidator:
             "passed": True,
             "errors": [],
         }
-        logger.info("Running DataValidator suite...")
+
+        # Check VQAv2 directories
+        for key in ["vqa_train_dir", "vqa_val_dir"]:
+            if not Path(self.config.get(key, "")).is_dir():
+                report["vqav2_images_valid"] = False
+                report["errors"].append(f"Missing or invalid directory: {key}")
+
+        # Check POPE files
+        for p in self.config.get("pope_files", []):
+            if not Path(p).exists():
+                report["pope_split_complete"] = False
+                report["errors"].append(f"Missing POPE file: {p}")
+
+        # Check Captions Count
+        try:
+            with open(self.config.get("captions_path", ""), "r") as f:
+                captions = json.load(f)
+                if len(captions) != 1000:
+                    report["captions_count_1000"] = False
+        except Exception:
+            report["captions_count_1000"] = False
+
+        # Check FAISS index
+        if not Path(self.config.get("faiss_index_path", "")).exists():
+            report["faiss_index_valid"] = False
+
+        report["passed"] = all(v is True for k, v in report.items() if isinstance(v, bool))
+        logger.info("DataValidator suite complete. Status: %s", report["passed"])
         return report
