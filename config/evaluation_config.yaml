@@ -1,0 +1,45 @@
+# ============================================================
+# hallucination-reduced-vqa — config/evaluation_config.yaml
+# Module 4: Evaluation & Results Analysis Configuration
+# ============================================================
+
+evaluation:
+  modes: ["A", "B", "C"]
+  pope_modes: ["random", "popular", "adversarial"]
+  sample_size: 1000            # SRS: evaluate on 1000 images
+  seed: 42                     # Reproducibility seed (SRS NFG-4)
+
+  # Dataset paths (relative to project root)
+  data_root: "data"
+  faiss_index_path: "data/faiss_index"
+  lora_path: "checkpoints/lora_weights"
+
+  # Inference results caching
+  results_cache_dir: "results/inference_cache"
+  use_cached_results: true     # Skip re-inference if results already saved
+
+chair:
+  object_vocab: "mscoco_80_classes"
+  use_synonyms: true            # Map synonyms to canonical COCO class names
+
+pope:
+  yes_keywords: ["yes", "there is", "there are", "i can see", "i see"]
+  no_keywords: ["no", "there is no", "there are no", "i cannot see", "not present", "i can't see"]
+
+reproducibility:
+  n_runs: 3
+  tolerance_pct: 0.1            # Max allowed variance % (SRS NFG-4)
+
+output:
+  results_dir: "results"
+  save_detailed: true
+  save_qualitative_examples: 10  # For connector bottleneck report
+  formats: ["json", "markdown"]  # Output formats for comparison table
+
+# SRS Target Numbers (Section 3/5) — used for pass/fail reporting
+srs_targets:
+  vqa_accuracy_min_c: 70.0      # ≥70% for mode C
+  chair_i_max_c: 0.168          # ≤0.168 for mode C (≥20% reduction from A)
+  pope_f1_min_c: 0.60           # ≥0.60 for mode C
+  latency_max_c: 3.2            # ≤3.2s for mode C
+  memory_max_gb: 14.1           # ≤14.1GB for mode C

@@ -1,32 +1,41 @@
 # ============================================================
 # hallucination-reduced-vqa — config/inference_config.yaml
-# Module 3: Inference settings (placeholder for Module 3)
+# Module 3: Inference & Grounding Pipeline Configuration
+# SRS NFG-1: latency ≤3.2s  NFG-2: memory ≤14.1GB
 # ============================================================
 
-inference:
-  # Model
+model:
   base_model: "Qwen/Qwen2-VL-2B-Instruct"
-  lora_weights_path: "checkpoints/lora_weights/adapter_model"
+  lora_path: "checkpoints/lora_weights"
   quantization_bits: 4
+  device_map: "auto"
 
-  # Generation
-  max_new_tokens: 64
-  temperature: 0.1
-  do_sample: false                         # Greedy by default
+rag:
+  entropy_threshold: 0.8           # Trigger RAG if entropy > 0.8 (SRS spec)
+  top_k: 3                         # Retrieve top-3 captions (SRS FG-5)
+  clip_model: "openai/clip-vit-base-patch32"
+  evidence_template: "Evidence: {captions}"  # {captions} = cap1 | cap2 | cap3
+  faiss_index_path: "data/faiss_index"
+  target_activation_rate_min: 0.25  # 25% lower bound
+  target_activation_rate_max: 0.30  # 30% upper bound (SRS FG-5)
 
-  # RAG
-  rag:
-    enabled: true
-    top_k: 3
-    uncertainty_threshold: 0.5           # Trigger RAG if confidence < threshold
-    faiss_index_path: "${DATA_ROOT:./data}/faiss_index/index.faiss"
+vcd:
+  alpha: 0.5                       # logit combination weight (SRS spec)
+  blur_radius: 15                  # Gaussian blur radius for distorted image
+  max_new_tokens: 20               # Token-by-token VCD loop limit
+  max_overhead_ms: 500             # Max VCD distorted-pass overhead (SRS)
 
-  # VCD
-  vcd:
-    enabled: true
-    noise_step: 999                      # Diffusion noise step for distorted image
-    alpha_cd: 1.0                        # Contrastive decoding weight
+performance:
+  target_latency_seconds: 3.2      # NFG-1 (SRS: <3s ideal, 3.2s acceptable)
+  target_memory_gb: 14.1           # NFG-2
+  seed: 42                         # Reproducibility seed
 
-  # Output
-  output_dir: "checkpoints/model_outputs"
-  batch_size: 8
+generation:
+  max_new_tokens: 20               # Used by modes A/B greedy decode
+  temperature: 1.0
+  do_sample: false                 # Greedy decoding
+
+output:
+  output_dir: "results"
+  checkpoint_dir: "results/batch_checkpoints"
+  batch_size: 1                    # Process one image at a time (memory safety)

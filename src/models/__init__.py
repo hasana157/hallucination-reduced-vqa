@@ -2,10 +2,11 @@
 
 from src.models.lora_adapter import LoRAAdapter
 from src.models.qwen_vl import QwenVLQuantizer
-from src.models.vcd import VisualContrastiveDecoder
+from src.models.vcd import GaussianBlurDistorter, VisualContrastiveDecoder
 
 __all__ = [
     "QwenVLQuantizer",
     "LoRAAdapter",
     "VisualContrastiveDecoder",
+    "GaussianBlurDistorter",
 ]

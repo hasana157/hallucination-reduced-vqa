@@ -22,7 +22,7 @@ def test_training_config_defaults():
 def test_vqa_accuracy_metric():
     """VQA accuracy exact match calculation."""
     preds = ["cat", "dog", "blue"]
-    gts = [["cat", "tabby"], ["dog", "puppy"], ["red", "green"]]
+    gts = [["cat", "cat", "cat"], ["dog", "dog", "dog"], ["red", "green", "yellow"]]
     acc = compute_vqa_accuracy(preds, gts)
     assert acc == pytest.approx(0.6666, abs=0.01)
 
