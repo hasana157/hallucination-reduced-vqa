@@ -87,16 +87,29 @@ class VQAv2Loader:
         try:
             from datasets import load_dataset
             logger.info(f"Downloading/Loading VQAv2 split '{split}' via HuggingFace datasets...")
-            dataset = load_dataset("lmms-lab/VQAv2", split=split)
-
-            for i, item in enumerate(dataset):
-                result[i] = {
-                    "image_id": item.get("image_id", i),
-                    "image_path": str(self.vqav2_dir / split / f"{item.get('image_id', i)}.jpg"),
-                    "question": item.get("question", ""),
-                    "answers": [a["answer"] for a in item.get("answers", [])] if "answers" in item else [item.get("multiple_choice_answer", "")],
-                    "question_id": item.get("question_id", i)
-                }
+            dataset = None
+            sources = [
+                ("pminervini/VQAv2", split if split in ["train", "validation"] else "validation"),
+                ("Multimodal-Fatima/VQAv2_train" if split == "train" else "Multimodal-Fatima/VQAv2_val", split if split == "train" else "validation"),
+                ("lmms-lab/VQAv2", "validation" if split != "train" else "validation"),
+            ]
+            for repo, s in sources:
+                try:
+                    dataset = load_dataset(repo, split=s)
+                    logger.info(f"Successfully loaded VQAv2 from {repo} (split: {s})")
+                    break
+                except Exception as src_err:
+                    logger.debug(f"Failed source {repo}: {src_err}")
+            
+            if dataset is not None:
+                for i, item in enumerate(dataset):
+                    result[i] = {
+                        "image_id": item.get("image_id", i),
+                        "image_path": str(self.vqav2_dir / split / f"{item.get('image_id', i)}.jpg"),
+                        "question": item.get("question", ""),
+                        "answers": [a["answer"] for a in item.get("answers", [])] if "answers" in item and isinstance(item["answers"], list) and len(item["answers"]) > 0 and isinstance(item["answers"][0], dict) else ([item.get("multiple_choice_answer", "")] if item.get("multiple_choice_answer") else ["yes"]),
+                        "question_id": item.get("question_id", i)
+                    }
         except Exception as e:
             logger.warning(f"Could not load VQAv2 via HuggingFace datasets: {e}. Generating local fallback layout...")
             # Fallback to local files if present
