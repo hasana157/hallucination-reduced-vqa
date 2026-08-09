@@ -15,6 +15,16 @@ from typing import Any, Dict, List, Optional, Tuple, Union
 
 import numpy as np
 
+# Fix Pillow version incompatibility: older Colab PIL builds may lack _Ink type
+try:
+    from PIL._typing import _Ink  # noqa: F401
+except ImportError:
+    try:
+        import PIL._typing as _pil_typing
+        _pil_typing._Ink = Union[float, Tuple[int, ...], str]
+    except Exception:
+        pass
+
 logger = logging.getLogger(__name__)
 
 
