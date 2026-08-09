@@ -85,14 +85,10 @@ class VQAv2Loader:
         """Load data using HuggingFace datasets or fallback to dummy structured dict if offline."""
         result = {}
         try:
-            try:
-                dataset = load_dataset("HuggingFaceM4/VQAv2", split=split)
-            except Exception:
-                try:
-                    dataset = load_dataset("davisbrown/vqav2", split=split)
-                except Exception:
-                    dataset = load_dataset("HuggingFaceM4/VQAv2", split=split, trust_remote_code=True)
-            
+            from datasets import load_dataset
+            logger.info(f"Downloading/Loading VQAv2 split '{split}' via HuggingFace datasets...")
+            dataset = load_dataset("lmms-lab/VQAv2", split=split)
+
             for i, item in enumerate(dataset):
                 result[i] = {
                     "image_id": item.get("image_id", i),
