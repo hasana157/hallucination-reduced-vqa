@@ -231,6 +231,7 @@ class VisualContrastiveDecoder:
             # --- Original image forward pass ---
             orig_forward_kwargs = {k: v for k, v in orig_inputs.items()}
             orig_forward_kwargs["input_ids"] = current_orig_ids
+            orig_forward_kwargs["attention_mask"] = torch.ones_like(current_orig_ids)
             if orig_pixel_values is not None:
                 orig_forward_kwargs["pixel_values"] = orig_pixel_values
 
@@ -242,6 +243,7 @@ class VisualContrastiveDecoder:
             blur_start = time.perf_counter()
             blur_forward_kwargs = {k: v for k, v in blur_inputs.items()}
             blur_forward_kwargs["input_ids"] = current_blur_ids
+            blur_forward_kwargs["attention_mask"] = torch.ones_like(current_blur_ids)
             if blur_pixel_values is not None:
                 blur_forward_kwargs["pixel_values"] = blur_pixel_values
 
