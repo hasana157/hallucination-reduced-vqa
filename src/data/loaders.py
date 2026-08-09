@@ -89,9 +89,8 @@ class VQAv2Loader:
             logger.info(f"Downloading/Loading VQAv2 split '{split}' via HuggingFace datasets...")
             dataset = None
             sources = [
+                ("Multimodal-Fatima/VQAv2_train" if split == "train" else "Multimodal-Fatima/VQAv2_validation", split if split == "train" else "validation"),
                 ("pminervini/VQAv2", split if split in ["train", "validation"] else "validation"),
-                ("Multimodal-Fatima/VQAv2_train" if split == "train" else "Multimodal-Fatima/VQAv2_val", split if split == "train" else "validation"),
-                ("lmms-lab/VQAv2", "validation" if split != "train" else "validation"),
             ]
             for repo, s in sources:
                 try:
