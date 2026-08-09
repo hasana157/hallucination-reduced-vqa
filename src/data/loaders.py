@@ -82,33 +82,24 @@ class VQAv2Loader:
         return data
 
     def _load_from_source(self, split: str) -> Dict[int, Dict[str, Any]]:
-        """Load data using HuggingFace datasets or fallback to dummy structured dict if offline."""
+        """Load data using HuggingFace datasets streaming or fallback."""
         result = {}
         try:
             from datasets import load_dataset
-            logger.info(f"Downloading/Loading VQAv2 split '{split}' via HuggingFace datasets...")
-            dataset = None
-            sources = [
-                ("Multimodal-Fatima/VQAv2_train" if split == "train" else "Multimodal-Fatima/VQAv2_validation", split if split == "train" else "validation"),
-                ("pminervini/VQAv2", split if split in ["train", "validation"] else "validation"),
-            ]
-            for repo, s in sources:
-                try:
-                    dataset = load_dataset(repo, split=s)
-                    logger.info(f"Successfully loaded VQAv2 from {repo} (split: {s})")
-                    break
-                except Exception as src_err:
-                    logger.debug(f"Failed source {repo}: {src_err}")
+            logger.info(f"Streaming VQAv2 split '{split}' via HuggingFace datasets...")
+            repo = "Multimodal-Fatima/VQAv2_train" if split == "train" else "Multimodal-Fatima/VQAv2_validation"
+            s = "train" if split == "train" else "validation"
+            ds_stream = load_dataset(repo, split=s, streaming=True)
+            max_items = 10000 if split == "train" else 2000
             
-            if dataset is not None:
-                for i, item in enumerate(dataset):
-                    result[i] = {
-                        "image_id": item.get("image_id", i),
-                        "image_path": str(self.vqav2_dir / split / f"{item.get('image_id', i)}.jpg"),
-                        "question": item.get("question", ""),
-                        "answers": [a["answer"] for a in item.get("answers", [])] if "answers" in item and isinstance(item["answers"], list) and len(item["answers"]) > 0 and isinstance(item["answers"][0], dict) else ([item.get("multiple_choice_answer", "")] if item.get("multiple_choice_answer") else ["yes"]),
-                        "question_id": item.get("question_id", i)
-                    }
+            for i, item in enumerate(ds_stream.take(max_items)):
+                result[i] = {
+                    "image_id": item.get("image_id", i),
+                    "image_path": str(self.vqav2_dir / split / f"{item.get('image_id', i)}.jpg"),
+                    "question": item.get("question", ""),
+                    "answers": [a["answer"] for a in item.get("answers", [])] if "answers" in item and isinstance(item["answers"], list) and len(item["answers"]) > 0 and isinstance(item["answers"][0], dict) else ([item.get("multiple_choice_answer", "")] if item.get("multiple_choice_answer") else ["yes"]),
+                    "question_id": item.get("question_id", i)
+                }
         except Exception as e:
             logger.warning(f"Could not load VQAv2 via HuggingFace datasets: {e}. Generating local fallback layout...")
             # Fallback to local files if present
