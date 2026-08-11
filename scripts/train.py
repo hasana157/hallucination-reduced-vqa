@@ -22,9 +22,16 @@ def main():
     parser = argparse.ArgumentParser(description="Run QLoRA Fine-Tuning on VQAv2 dataset.")
     parser.add_argument("--data_root", type=str, default=None, help="Root directory for dataset storage")
     parser.add_argument("--output_dir", type=str, default="checkpoints/lora_weights", help="Directory to save LoRA checkpoints")
-    parser.add_argument("--num_epochs", type=int, default=2, help="Number of training epochs")
-    parser.add_argument("--learning_rate", type=float, default=1e-4, help="Learning rate")
-    parser.add_argument("--batch_size", type=int, default=4, help="Per device batch size")
+    parser.add_argument("--num_epochs", type=int, default=4, help="Number of training epochs")
+    parser.add_argument("--learning_rate", type=float, default=2e-4, help="Learning rate")
+    parser.add_argument("--batch_size", type=int, default=2, help="Per device batch size")
+    parser.add_argument("--gradient_accumulation_steps", type=int, default=4, help="Gradient accumulation steps")
+    parser.add_argument("--warmup_steps", type=int, default=100, help="Number of warmup steps")
+    parser.add_argument("--save_steps", type=int, default=200, help="Checkpoint save frequency in steps")
+    parser.add_argument("--eval_steps", type=int, default=500, help="Evaluation frequency in steps")
+    parser.add_argument("--save_total_limit", type=int, default=3, help="Maximum number of checkpoints to keep")
+    parser.add_argument("--lora_rank", type=int, default=32, help="LoRA rank")
+    parser.add_argument("--lora_alpha", type=int, default=64, help="LoRA alpha scaling")
     parser.add_argument("--resume_from_checkpoint", type=str, default=None, help="Checkpoint folder path to resume from")
     args = parser.parse_args()
 
@@ -61,7 +68,7 @@ def main():
 
     # 3. Apply LoRA Adapter
     print("\n[3/4] Applying LoRA Adapters...")
-    model = LoRAAdapter.apply(model, r=16, alpha=32)
+    model = LoRAAdapter.apply(model, r=args.lora_rank, alpha=args.lora_alpha)
 
     # 4. Configure & Train
     print("\n[4/4] Starting Training...")
@@ -69,7 +76,14 @@ def main():
         num_epochs=args.num_epochs,
         learning_rate=args.learning_rate,
         batch_size=args.batch_size,
+        gradient_accumulation_steps=args.gradient_accumulation_steps,
+        warmup_steps=args.warmup_steps,
+        save_steps=args.save_steps,
+        eval_steps=args.eval_steps,
+        save_total_limit=args.save_total_limit,
         output_dir=args.output_dir,
+        lora_r=args.lora_rank,
+        lora_alpha=args.lora_alpha,
     )
 
     trainer = QLoRATrainer(
