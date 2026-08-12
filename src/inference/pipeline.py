@@ -358,33 +358,28 @@ class InferencePipeline:
         Returns:
             Generated answer string.
         """
-        # Core grounding instruction — explicitly penalizes hallucination
-        grounding_instructions = (
-            "Use only the image and any retrieved evidence to answer. "
-            "Do NOT mention objects, facts, or details not visible in the image. "
-            "If the answer cannot be determined from the image, say 'I don't know'."
+        system_prompt = (
+            "You are a careful visual assistant. "
+            "Answer only based on what is clearly visible in the image. "
+            "If the answer is not visible or unsupported, say 'No' or 'Not visible'."
         )
 
-        # For yes/no object-presence questions (e.g. POPE), enforce strict output
+        user_content = []
+        if evidence:
+            user_content.append({"type": "text", "text": f"Context:\n{evidence}"})
+        user_content.append({"type": "image", "image": image})
+
+        q_text = question
         if self._is_yes_no_question(question):
-            grounding_instructions += " Answer with only 'yes' or 'no'."
+            q_text += " Answer with only 'yes' or 'no'."
+        user_content.append({"type": "text", "text": q_text})
 
-        prompt = (
-            f"{grounding_instructions}\n\n{question}"
-            if evidence is None
-            else f"{evidence}\n\n{grounding_instructions}\n\n{question}"
-        )
         device = self._get_device(model)
 
         try:
             messages = [
-                {
-                    "role": "user",
-                    "content": [
-                        {"type": "image", "image": image},
-                        {"type": "text", "text": prompt},
-                    ],
-                }
+                {"role": "system", "content": [{"type": "text", "text": system_prompt}]},
+                {"role": "user", "content": user_content},
             ]
             text = processor.apply_chat_template(
                 messages, tokenize=False, add_generation_prompt=True
@@ -393,6 +388,8 @@ class InferencePipeline:
                 text=[text], images=[image], return_tensors="pt"
             )
         except Exception:
+            prompt = f"{evidence}\n\n{question}" if evidence else question
+            inputs = processor(text=[prompt], return_tensors="pt")
             inputs = processor(text=[prompt], return_tensors="pt")
 
         inputs = {k: v.to(device) if hasattr(v, "to") else v for k, v in inputs.items()}

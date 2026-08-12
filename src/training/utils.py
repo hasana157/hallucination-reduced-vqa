@@ -84,13 +84,19 @@ class VQACollator:
         """
         from PIL import Image
 
+        SYSTEM_PROMPT = (
+            "You are a careful visual assistant. "
+            "Answer only based on what is clearly visible in the image. "
+            "If the answer is not visible or unsupported, say 'No' or 'Not visible'."
+        )
+
         images = []
         texts = []
         answer_texts = []
 
         for item in batch:
-            img_p = Path(item["image_path"])
-            if img_p.exists():
+            img_p = Path(item["image_path"]) if item.get("image_path") else None
+            if img_p and img_p.exists():
                 try:
                     img = Image.open(img_p).convert("RGB")
                 except Exception:
@@ -100,66 +106,58 @@ class VQACollator:
 
             images.append(img)
 
-            # Format Qwen2-VL conversational prompt (full sequence)
-            answer_text = item["answers"][0] if item["answers"] else ""
+            answer_text = item["answers"][0] if item.get("answers") else item.get("answer", "")
             answer_texts.append(answer_text)
-            full_prompt = (
-                f"<|im_start|>system\nYou are a helpful assistant.<|im_end|>\n"
-                f"<|im_start|>user\n<|vision_start|><|image_pad|><|vision_end|>{item['question']}<|im_end|>\n"
-                f"<|im_start|>assistant\n{answer_text}<|im_end|>"
-            )
-            texts.append(full_prompt)
+
+            messages = [
+                {"role": "system", "content": [{"type": "text", "text": SYSTEM_PROMPT}]},
+                {
+                    "role": "user",
+                    "content": [
+                        {"type": "image", "image": img},
+                        {"type": "text", "text": item["question"]},
+                    ],
+                },
+                {
+                    "role": "assistant",
+                    "content": [{"type": "text", "text": answer_text}],
+                },
+            ]
+            try:
+                prompt_str = self.processor.apply_chat_template(
+                    messages, tokenize=False, add_generation_prompt=False
+                )
+            except Exception:
+                prompt_str = (
+                    f"<|im_start|>system\n{SYSTEM_PROMPT}<|im_end|>\n"
+                    f"<|im_start|>user\n<|vision_start|><|image_pad|><|vision_end|>{item['question']}<|im_end|>\n"
+                    f"<|im_start|>assistant\n{answer_text}<|im_end|>"
+                )
+            texts.append(prompt_str)
 
         inputs = self.processor(text=texts, images=images, return_tensors="pt", padding=True)
 
-        # --- Label masking: mask all prompt tokens, keep only answer tokens ---
-        # IMPORTANT: prompt_len must be computed by running the SAME image(s)
-        # through self.processor (not the bare text tokenizer), because
-        # Qwen2-VL expands each "<|image_pad|>" placeholder into many real
-        # image-patch tokens depending on image size (grid_thw). Tokenizing
-        # the prefix text alone (without images) undercounts the prompt by
-        # hundreds of tokens, which leaves image-patch tokens unmasked and
-        # trains the model to predict them as if they were answer text —
-        # corrupting the supervision signal entirely.
+        # --- Label masking: mask all prompt/image tokens (-100), label only answer tokens ---
         labels = inputs["input_ids"].clone()
+        pad_token_id = getattr(self.processor.tokenizer, "pad_token_id", 0) or 0
+
         for i, answer_text in enumerate(answer_texts):
-            prefix = (
-                f"<|im_start|>system\nYou are a helpful assistant.<|im_end|>\n"
-                f"<|im_start|>user\n<|vision_start|><|image_pad|><|vision_end|>{batch[i]['question']}<|im_end|>\n"
-                f"<|im_start|>assistant\n"
-            )
+            # Mask entire sequence by default
+            labels[i, :] = -100
+
+            tokenizer = getattr(self.processor, "tokenizer", self.processor)
             try:
-                # Run the prefix through the FULL processor with the same
-                # image so <|image_pad|> expands identically to how it
-                # expands in the real `inputs` above. This gives the true
-                # prompt length including all image-patch tokens.
-                prefix_inputs = self.processor(
-                    text=[prefix],
-                    images=[images[i]],
-                    return_tensors="pt",
-                )
-                prompt_len = prefix_inputs["input_ids"].shape[-1]
+                ans_ids = tokenizer(answer_text, add_special_tokens=False).input_ids
+                ans_len = len(ans_ids)
+                if ans_len > 0 and ans_len < inputs["input_ids"].shape[-1]:
+                    # Find non-padding end of sequence
+                    non_pad = (inputs["input_ids"][i] != pad_token_id).nonzero(as_tuple=True)[0]
+                    if len(non_pad) >= ans_len:
+                        end_idx = non_pad[-1].item() + 1
+                        start_idx = max(0, end_idx - ans_len)
+                        labels[i, start_idx:end_idx] = inputs["input_ids"][i, start_idx:end_idx]
             except Exception as e:
-                logger.warning(
-                    f"prompt_len computation via processor failed ({e}); "
-                    "falling back to text-only tokenizer estimate (may be inaccurate)."
-                )
-                try:
-                    prefix_ids = self.processor.tokenizer(
-                        prefix, return_tensors="pt", add_special_tokens=False,
-                    ).input_ids
-                    prompt_len = prefix_ids.shape[-1]
-                except Exception:
-                    prompt_len = int(labels[i].shape[-1] * 0.8)
-
-            # Clamp defensively in case padding changes lengths across batch items
-            prompt_len = min(prompt_len, labels[i].shape[-1])
-
-            # Mask padding tokens and prompt tokens
-            labels[i, :prompt_len] = -100
-            # Also mask padding
-            pad_token_id = getattr(self.processor.tokenizer, "pad_token_id", 0) or 0
-            labels[i, labels[i] == pad_token_id] = -100
+                logger.warning(f"Exact label masking for item {i} failed ({e}); keeping prompt masked.")
 
         inputs["labels"] = labels
         return inputs
