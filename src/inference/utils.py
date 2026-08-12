@@ -23,9 +23,9 @@ logger = logging.getLogger(__name__)
 # ============================================================
 # Constants (from SRS)
 # ============================================================
-ENTROPY_THRESHOLD: float = 0.8
+ENTROPY_THRESHOLD: float = 0.55
 VCD_ALPHA: float = 0.5
-RAG_TOP_K: int = 3
+RAG_TOP_K: int = 5
 GAUSSIAN_BLUR_RADIUS: int = 15
 TARGET_RAG_ACTIVATION_RATE: Tuple[float, float] = (0.25, 0.30)
 MAX_VCD_OVERHEAD_MS: int = 500

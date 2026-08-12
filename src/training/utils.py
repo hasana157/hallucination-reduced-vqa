@@ -113,25 +113,47 @@ class VQACollator:
         inputs = self.processor(text=texts, images=images, return_tensors="pt", padding=True)
 
         # --- Label masking: mask all prompt tokens, keep only answer tokens ---
+        # IMPORTANT: prompt_len must be computed by running the SAME image(s)
+        # through self.processor (not the bare text tokenizer), because
+        # Qwen2-VL expands each "<|image_pad|>" placeholder into many real
+        # image-patch tokens depending on image size (grid_thw). Tokenizing
+        # the prefix text alone (without images) undercounts the prompt by
+        # hundreds of tokens, which leaves image-patch tokens unmasked and
+        # trains the model to predict them as if they were answer text —
+        # corrupting the supervision signal entirely.
         labels = inputs["input_ids"].clone()
         for i, answer_text in enumerate(answer_texts):
-            # Build the prompt-only prefix (without the answer) to find its token length
             prefix = (
                 f"<|im_start|>system\nYou are a helpful assistant.<|im_end|>\n"
                 f"<|im_start|>user\n<|vision_start|><|image_pad|><|vision_end|>{batch[i]['question']}<|im_end|>\n"
                 f"<|im_start|>assistant\n"
             )
             try:
-                # Tokenize the prefix to find where the answer starts
-                prefix_ids = self.processor.tokenizer(
-                    prefix,
+                # Run the prefix through the FULL processor with the same
+                # image so <|image_pad|> expands identically to how it
+                # expands in the real `inputs` above. This gives the true
+                # prompt length including all image-patch tokens.
+                prefix_inputs = self.processor(
+                    text=[prefix],
+                    images=[images[i]],
                     return_tensors="pt",
-                    add_special_tokens=False,
-                ).input_ids
-                prompt_len = prefix_ids.shape[-1]
-            except Exception:
-                # Fallback: mask first 80% of tokens as prompt
-                prompt_len = int(labels[i].shape[-1] * 0.8)
+                )
+                prompt_len = prefix_inputs["input_ids"].shape[-1]
+            except Exception as e:
+                logger.warning(
+                    f"prompt_len computation via processor failed ({e}); "
+                    "falling back to text-only tokenizer estimate (may be inaccurate)."
+                )
+                try:
+                    prefix_ids = self.processor.tokenizer(
+                        prefix, return_tensors="pt", add_special_tokens=False,
+                    ).input_ids
+                    prompt_len = prefix_ids.shape[-1]
+                except Exception:
+                    prompt_len = int(labels[i].shape[-1] * 0.8)
+
+            # Clamp defensively in case padding changes lengths across batch items
+            prompt_len = min(prompt_len, labels[i].shape[-1])
 
             # Mask padding tokens and prompt tokens
             labels[i, :prompt_len] = -100

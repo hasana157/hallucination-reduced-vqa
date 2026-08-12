@@ -358,7 +358,22 @@ class InferencePipeline:
         Returns:
             Generated answer string.
         """
-        prompt = question if evidence is None else f"{evidence}\n\n{question}"
+        # Core grounding instruction — explicitly penalizes hallucination
+        grounding_instructions = (
+            "Use only the image and any retrieved evidence to answer. "
+            "Do NOT mention objects, facts, or details not visible in the image. "
+            "If the answer cannot be determined from the image, say 'I don't know'."
+        )
+
+        # For yes/no object-presence questions (e.g. POPE), enforce strict output
+        if self._is_yes_no_question(question):
+            grounding_instructions += " Answer with only 'yes' or 'no'."
+
+        prompt = (
+            f"{grounding_instructions}\n\n{question}"
+            if evidence is None
+            else f"{evidence}\n\n{grounding_instructions}\n\n{question}"
+        )
         device = self._get_device(model)
 
         try:
@@ -478,6 +493,30 @@ class InferencePipeline:
             return "cpu"
         except Exception:
             return "cpu"
+
+    @staticmethod
+    def _is_yes_no_question(question: str) -> bool:
+        """Detect POPE-style yes/no object-presence questions.
+
+        Matches questions starting with interrogative verbs that typically
+        expect a binary answer (e.g. 'Is there a cat?', 'Does this image
+        contain a dog?', 'Are there any chairs?').
+
+        Returns:
+            True if the question expects a yes/no answer.
+        """
+        import re
+        q = question.strip().lower()
+        yes_no_patterns = [
+            r"^is there\b",
+            r"^are there\b",
+            r"^does (the|this|an?)? ?image\b",
+            r"^do (the|these)? ?images\b",
+            r"^can you (see|spot|find)\b",
+            r"^is (a|an|the)\b",
+            r"^are (the|any)\b",
+        ]
+        return any(re.search(p, q) for p in yes_no_patterns)
 
     @staticmethod
     def _save_checkpoint(results: List[InferenceResult], path: str) -> None:

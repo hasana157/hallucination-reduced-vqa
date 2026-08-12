@@ -11,8 +11,8 @@ model:
   device_map: "auto"
 
 rag:
-  entropy_threshold: 0.8           # Trigger RAG if entropy > 0.8 (SRS spec)
-  top_k: 3                         # Retrieve top-3 captions (SRS FG-5)
+  entropy_threshold: 0.55          # Lower trigger threshold to increase helpful retrieval
+  top_k: 5                         # Retrieve top-5 captions for stronger grounding
   clip_model: "openai/clip-vit-base-patch32"
   evidence_template: "Evidence: {captions}"  # {captions} = cap1 | cap2 | cap3
   faiss_index_path: "data/faiss_index"

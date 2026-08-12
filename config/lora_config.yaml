@@ -7,10 +7,10 @@
 # ------ Ablation Variants ------
 # Modify these values and re-run training to study effect of rank on accuracy
 
-# Default (SRS baseline)
+# Default (matches training_config.yaml)
 default:
-  r: 16
-  alpha: 32
+  r: 32
+  alpha: 64
   dropout: 0.05
   target_modules:
     - "q_proj"

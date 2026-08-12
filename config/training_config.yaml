@@ -14,8 +14,8 @@ model:
 
 # ------ LoRA Configuration ------
 lora:
-  r: 16                                   # Rank (expressiveness)
-  alpha: 32                               # Scaling factor (alpha / r = 2.0)
+  r: 32                                   # Rank (expressiveness)
+  alpha: 64                               # Scaling factor (alpha / r = 2.0)
   target_modules:
     - "q_proj"
     - "v_proj"
@@ -25,7 +25,7 @@ lora:
   dropout: 0.05
   bias: "none"
   task_type: "CAUSAL_LM"
-  # Number of trainable params ≈ 0.5% of total (logged during setup)
+  # Number of trainable params ≈ 1.0% of total (more expressive adaptation)
 
 # ------ Training Hyperparameters ------
 training:
@@ -41,7 +41,7 @@ training:
   per_device_eval_batch_size: 2
   gradient_accumulation_steps: 4         # Effective batch = 2 × 4 = 8
   # Epochs & Steps
-  num_train_epochs: 4
+  num_train_epochs: 8
   max_grad_norm: 1.0                      # Gradient clipping
   # Precision
   fp16: true                             # Mixed precision (T4 supports fp16)
@@ -52,8 +52,8 @@ training:
   save_total_limit: 3                    # Keep only last 3 checkpoints
   # Evaluation
   evaluation_strategy: "steps"
-  eval_steps: 1000
-  load_best_model_at_end: false          # Save VRAM; load manually if needed
+  eval_steps: 250
+  load_best_model_at_end: true           # Keep the best checkpoint during training
   # Reproducibility
   seed: 42
   data_seed: 42
