@@ -124,6 +124,13 @@ class QLoRATrainer:
 
     def _build_training_args(self) -> TrainingArguments:
         """Build shared TrainingArguments used by both backends."""
+        import torch
+        # Use bf16 when available (T4 supports it) — avoids GradScaler which
+        # crashes when fp32 visual.merger params produce fp16 gradients.
+        # fp16 GradScaler calls _unscale_grads_ with allow_fp16=False, which
+        # raises ValueError on any fp16 gradient tensor.
+        use_bf16 = torch.cuda.is_available() and torch.cuda.is_bf16_supported()
+        use_fp16 = not use_bf16 and torch.cuda.is_available()
         return TrainingArguments(
             output_dir=str(self.output_dir),
             learning_rate=self.config.learning_rate,
@@ -139,7 +146,8 @@ class QLoRATrainer:
             save_total_limit=self.config.save_total_limit,
             eval_strategy="steps" if self.val_dataset else "no",
             eval_steps=self.config.eval_steps if self.val_dataset else None,
-            fp16=True,
+            bf16=use_bf16,
+            fp16=use_fp16,
             logging_steps=50,
             seed=self.config.seed,
             report_to="none",

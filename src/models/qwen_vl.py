@@ -44,7 +44,7 @@ class QwenVLQuantizer:
             return BitsAndBytesConfig(
                 load_in_4bit=True,
                 bnb_4bit_quant_type="nf4",
-                bnb_4bit_compute_dtype=torch.float16,
+                bnb_4bit_compute_dtype=torch.bfloat16,   # match bf16 training mode
                 bnb_4bit_use_double_quant=True,
                 # NOTE: llm_int8_skip_modules does NOT reliably prevent 4-bit
                 # quantization of visual.merger MLP weights. Dequantization is
