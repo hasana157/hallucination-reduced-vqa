@@ -61,7 +61,7 @@ class VQADataset(Dataset):
             "image_path": item["image_path"],
             "question": item["question"],
             "answers": item["answers"],
-            "question_id": item["question_id"],
+            "question_id": item.get("question_id", idx),  # synthetic items may lack this key
         }
 
 
