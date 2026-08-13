@@ -49,13 +49,14 @@ class LoRAAdapter:
         from peft import LoraConfig, TaskType
 
         targets = target_modules or cls.DEFAULT_TARGET_MODULES
-        to_save = modules_to_save if modules_to_save is not None else cls.DEFAULT_MODULES_TO_SAVE
+        # Do NOT pass modules_to_save here — visual.merger is unfrozen manually
+        # in apply() after prepare_model_for_kbit_training to avoid the
+        # 'only Tensors of floating point dtype can require gradients' crash.
 
         config = LoraConfig(
             r=r,
             lora_alpha=alpha,
             target_modules=targets,
-            modules_to_save=to_save,
             lora_dropout=dropout,
             bias=bias,
             task_type=TaskType.CAUSAL_LM,
@@ -79,7 +80,10 @@ class LoRAAdapter:
             r: LoRA rank.
             alpha: LoRA alpha scaling.
             target_modules: Target projection module names.
-            modules_to_save: Non-LoRA modules to train (e.g. visual connector).
+            modules_to_save: Non-LoRA modules to manually unfreeze (e.g. ["visual.merger"]).
+                These are cast to float32 and trained alongside LoRA adapters.
+                NOT passed to LoraConfig.modules_to_save to avoid the uint8
+                gradient crash when the module is loaded with 4-bit quantization.
             dropout: Dropout rate.
 
         Returns:
@@ -91,18 +95,40 @@ class LoRAAdapter:
             r=r,
             alpha=alpha,
             target_modules=target_modules,
-            modules_to_save=modules_to_save,
             dropout=dropout,
         )
 
         logger.info("Preparing k-bit model for training...")
-        model = prepare_model_for_kbit_training(model)
+        model = prepare_model_for_kbit_training(
+            model,
+            use_gradient_checkpointing=True,
+        )
 
         logger.info(
             f"Applying LoRA adapters (r={r}, alpha={alpha}, "
-            f"targets={lora_config.target_modules}, modules_to_save={lora_config.modules_to_save})..."
+            f"targets={lora_config.target_modules})..."
         )
         peft_model = get_peft_model(model, lora_config)
+
+        # --- Manually unfreeze visual connector modules ---
+        # visual.merger was excluded from quantization (llm_int8_skip_modules
+        # in BitsAndBytesConfig), so its params are float16. We cast to float32
+        # and enable gradients so the connector is trained alongside LoRA.
+        to_unfreeze = modules_to_save if modules_to_save is not None else cls.DEFAULT_MODULES_TO_SAVE
+        unfrozen_count = 0
+        for name, param in peft_model.named_parameters():
+            for module_name in to_unfreeze:
+                if module_name in name:
+                    param.data = param.data.to(dtype=param.data.dtype if param.data.is_floating_point() else None)
+                    if param.data.is_floating_point():
+                        param.requires_grad_(True)
+                        unfrozen_count += 1
+                    else:
+                        logger.warning(
+                            f"Skipping requires_grad for {name}: "
+                            f"dtype={param.data.dtype} is not floating point."
+                        )
+        logger.info(f"Manually unfrozen {unfrozen_count} params in: {to_unfreeze}")
 
         trainable_params, all_params = peft_model.get_nb_trainable_parameters()
         pct = (trainable_params / all_params) * 100
