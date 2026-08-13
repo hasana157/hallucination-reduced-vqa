@@ -46,9 +46,9 @@ class QwenVLQuantizer:
                 bnb_4bit_quant_type="nf4",
                 bnb_4bit_compute_dtype=torch.float16,
                 bnb_4bit_use_double_quant=True,
-                # Keep visual.merger in fp16 — required so requires_grad_(True)
-                # works later. Quantized (uint8) tensors cannot have gradients.
-                llm_int8_skip_modules=["visual.merger"],
+                # NOTE: llm_int8_skip_modules does NOT reliably prevent 4-bit
+                # quantization of visual.merger MLP weights. Dequantization is
+                # handled explicitly in LoRAAdapter._dequantize_4bit_linears().
             )
         elif self.quantization_bits == 8:
             return BitsAndBytesConfig(load_in_8bit=True)
